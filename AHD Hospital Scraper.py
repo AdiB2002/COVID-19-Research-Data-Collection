@@ -3,9 +3,9 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.firefox.firefox_binary import FirefoxBinary
 import pandas as pd
 import time
-from selenium.webdriver.chrome.options import Options
 
 class Hospital():
     
@@ -32,11 +32,10 @@ class Hospital():
 class Scraper():
         
     # class-wide variables
-    executable_path = Service('C:/Computer Science/chromedriver_win32/chromedriver.exe')
-    chrome_options = Options()
-    chrome_options.add_argument('--disable-dev-shm-usage') 
-    chrome_options.add_argument('--deny-permission-prompts')
-    browser = webdriver.Chrome(options = chrome_options, service = executable_path)
+    options = webdriver.FirefoxOptions()
+    options.binary = FirefoxBinary("C:/Program Files/Mozilla Firefox/firefox.exe")
+    driver_service = Service("C:/Computer Science/geckodriver-v0.31.0-win32/geckodriver.exe")
+    browser = webdriver.Firefox(service=driver_service, options=options)
     wait = WebDriverWait(browser, 4)
     hospital_list = []
     
@@ -86,17 +85,45 @@ class Scraper():
                     pass
                 
                 # scrapes last date hospital information was updated
-                # the try and except is there in case a hospital entered couldn't be found so it is skipped 
+                # the try and except is there in case a hospital entered couldn't be found then a proccess is begun to either skip it or manually find it
                 try:
                     date_updated = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="main"]/div[2]/ul[1]/li')))
                     self.turn_list_to_text(date_updated)
                     date_updated = date_updated[0].split()[2]
                     has_ahd_profile = 'YES'
                 except:
-                    self.hospital_list.append(Hospital())
-                    self.browser.get('https://www.ahd.com/')
-                    continue
-                
+                    
+                    # tries to see if there is a was no results for the search
+                    # if no results then skip
+                    try:
+                        results_num = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="as_ul_front_page-quicksearch"]/li/span')))
+                        self.turn_list_to_text(results_num)
+                        if(results_num[0]=='No results'):
+                            self.hospital_list.append(Hospital())
+                            self.browser.get('https://www.ahd.com/')
+                            continue
+                        
+                        # raises error to hit the except in case it wasn't already 
+                        raise ValueError('Error')
+                    except:
+                        
+                        # prints hospital and and input to guide user through proccess of manually finding a hospital and moving on or just skipping
+                        print(hospital)
+                        input_string = input('Were you able to find hospital printed above? Enter Y or N and if choosing Y only enter answer when actually on the hospital page. Also if a captcha is presented deal with that before entering your answer: ')
+                        if(input_string.lower()=='y'):
+                            
+                            # if hospital found get date again
+                            date_updated = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="main"]/div[2]/ul[1]/li')))
+                            self.turn_list_to_text(date_updated)
+                            date_updated = date_updated[0].split()[2]
+                            has_ahd_profile = 'YES'
+                        
+                        # if not found code to skip
+                        else:
+                            self.hospital_list.append(Hospital())
+                            self.browser.get('https://www.ahd.com/')
+                            continue
+                        
                 # find the number of the table that has the information that needs to be scraped 
                 # does this by looping through tables and looking for a specific string 
                 found = False
@@ -111,27 +138,50 @@ class Scraper():
                             i += 1
                     except:
                         i += 1
+
+                # variable to keep track of whether to skip scraping beds               
+                skip_beds = False
+
+                # checks if staffed beds is equal to 0 
+                try:
+                    staffed_beds_0_check = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="main"]/div[2]/table/tbody/tr/td[1]/table/tbody/tr[7]/td[2]')))
+                    self.turn_list_to_text(staffed_beds_0_check)
+
+                    # if it is sets respective variables
+                    if(staffed_beds_0_check[0]=='0'):
+                        staffed_beds = 0
+                        non_icu_beds = 0
+                        icu_beds = 0
+                        skip_beds = True
+                        i = 0
                 
+                # if an error is thrown keep going
+                except Exception as e:
+                    pass
+
                 # hospital likely has no information on beds so disregard
                 if(i >= 10):
                     self.hospital_list.append(Hospital())
                     self.browser.get('https://www.ahd.com/')
                     continue
-    
-                # scrapes hospital staffed beds
-                staffed_beds = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="main"]/div[2]/table[' + str(i) + ']/tbody/tr[5]/td[2]')))
-                self.turn_list_to_text(staffed_beds)
-                staffed_beds = int(staffed_beds[0].replace(',', ''))
                 
-                # scrapes hospital non icu beds
-                non_icu_beds = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="main"]/div[2]/table[' + str(i) + ']/tbody/tr[2]/td[2]')))
-                self.turn_list_to_text(non_icu_beds)
-                non_icu_beds = int(non_icu_beds[0].replace(',', ''))
-                
-                # scrapes hospital icu beds
-                icu_beds = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="main"]/div[2]/table[' + str(i) + ']/tbody/tr[3]/td[2]')))
-                self.turn_list_to_text(icu_beds)
-                icu_beds = int(icu_beds[0].replace(',', ''))
+                # if not skipping scraping beds
+                if(not skip_beds):
+
+                    # scrapes hospital staffed beds
+                    staffed_beds = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="main"]/div[2]/table[' + str(i) + ']/tbody/tr[5]/td[2]')))
+                    self.turn_list_to_text(staffed_beds)
+                    staffed_beds = int(staffed_beds[0].replace(',', ''))
+                    
+                    # scrapes hospital non icu beds
+                    non_icu_beds = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="main"]/div[2]/table[' + str(i) + ']/tbody/tr[2]/td[2]')))
+                    self.turn_list_to_text(non_icu_beds)
+                    non_icu_beds = int(non_icu_beds[0].replace(',', ''))
+                    
+                    # scrapes hospital icu beds
+                    icu_beds = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="main"]/div[2]/table[' + str(i) + ']/tbody/tr[3]/td[2]')))
+                    self.turn_list_to_text(icu_beds)
+                    icu_beds = int(icu_beds[0].replace(',', ''))
                 
                 # scrapes hospital full address and gets address, city, and zip code from that
                 full_address = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="main"]/div[2]/table[1]/tbody/tr/td[1]/table/tbody/tr[1]/td[2]/span')))
@@ -199,7 +249,7 @@ def add_info_to_dataframe(hospital_list = [], df = pd.DataFrame()):
 def main():
     
     # reads in TX Hospital csv file as dataframe
-    df = pd.read_csv('C:/Computer Science/COVID-19 Research Project/Copy of TX Hosp ZIP Metadata.csv')
+    df = pd.read_csv('C:/Computer Science/COVID-19-Research-Data-Collection/Copy of TX Hosp ZIP Metadata.csv')
     
     # gets list of hospitals from it
     hospital_name_list = list(df['PROVIDER_NAME'])
@@ -220,6 +270,6 @@ def main():
     df = add_info_to_dataframe(hospital_list, df)
     
     # exports df to csv
-    df.to_csv('C:/Computer Science/COVID-19 Research Project/Temporary Scraped TX Hosp ZIP Metadata.csv', index = False) 
+    df.to_csv('C:/Computer Science/COVID-19-Research-Data-Collection/Temporary Scraped TX Hosp ZIP Metadata.csv', index = False) 
     
 main()
