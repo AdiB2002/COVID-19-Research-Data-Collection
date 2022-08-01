@@ -130,13 +130,13 @@ def export_to_csv(zip_code_list = []):
         df.loc[len(df)] = zip_code_obj.row_output()
         
     # exports df to csv
-    df.to_csv('C:/Computer Science/COVID-19 Research Project/Temporary Converted ZIP Codes Data.csv', index = False) 
+    df.to_csv('C:/Computer Science/COVID-19-Research-Data-Collection/Temporary Converted ZIP Codes Data.csv', index = False) 
 
 # verifies the scraped data
 def verify_data():
     
     # reads in the csv file as dataframe
-    df = pd.read_csv('C:/Computer Science/COVID-19 Research Project/Converted ZIP Codes Data.csv')
+    df = pd.read_csv("C:/Computer Science/COVID-19-Research-Data-Collection/Converted ZIP Codes Data.csv")
     
     # drops columns that were in the dataframe that were unnecessary 
     df.drop(df.iloc[:, 3:], inplace = True, axis = 1)
