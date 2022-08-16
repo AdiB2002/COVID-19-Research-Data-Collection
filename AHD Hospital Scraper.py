@@ -7,11 +7,14 @@ from selenium.webdriver.firefox.firefox_binary import FirefoxBinary
 import pandas as pd
 import time
 
+# AHD does block users from accessing their site after a searching up a certain amount of hospital profiles
+# ways i've found to get around this include limiting daily hospital searches to under 25 or changing ip adresses once blocked
+
 class Hospital():
     
-    def __init__(self, date_added = 'N/A', staffed_beds = 0, non_icu_beds = 0, icu_beds = 0, has_ahd_profile = 'NO', date_updated = 'N/A', full_address = 'N/A', address = 'N/A', city = 'N/A', zip_code = 'N/A', lat_y = 0, long_x = 0):
-        
-        # constructor with default values
+    # constructor with default values
+    def __init__(self, ahd = None, date_added = 'N/A', staffed_beds = 0, non_icu_beds = 0, icu_beds = 0, has_ahd_profile = 'NO', date_updated = 'N/A', full_address = 'N/A', address = 'N/A', city = 'N/A', zip_code = 'N/A', lat_y = 0, long_x = 0):
+        self.ahd = ahd
         self.date_added = date_added 
         self.staffed_beds = staffed_beds
         self.non_icu_beds = non_icu_beds
@@ -25,9 +28,9 @@ class Hospital():
         self.lat_y = lat_y
         self.long_x = long_x
     
-    # used to help add information back into dataframe
+    # used to help add information back into dataframe by outputting as a row
     def row_output(self):
-        return [self.date_added, self.staffed_beds, self.non_icu_beds, self.icu_beds, self.has_ahd_profile, self.date_updated, self.full_address, self.address, self.city, self.zip_code, self.lat_y, self.long_x]
+        return [self.ahd, self.date_added, self.staffed_beds, self.non_icu_beds, self.icu_beds, self.has_ahd_profile, self.date_updated, self.full_address, self.address, self.city, self.zip_code, self.lat_y, self.long_x]
         
 class Scraper():
         
@@ -45,7 +48,7 @@ class Scraper():
             list_passed[i] = list_passed[i].text
        
     # scrapes individual hospital information
-    def scrape_hospital_info(self, hospital_name_list = [], date_added = ''):
+    def scrape_hospital_info(self, name_list = [], date_added = ''):
         
         # opens a browser to ahd website
         self.browser.get('https://www.ahd.com/') 
@@ -54,28 +57,31 @@ class Scraper():
         count = 0
             
         # loops through each hospital
-        for hospital in hospital_name_list:
-            
+        for name in name_list:
+
+            # gets hospital and ahd name
+            hospital, ahd = name[0], name[1]
+
+            # if ahd name exists set hospital to ahd name 
+            if(not pd.isna(ahd)):
+                hospital = ahd
+
             # overarching try except to cover errors that sometimes occur throughout the code
             try:
             
                 # prints count
                 count += 1
-                print(str(count) + '/' + str(len(hospital_name_list)))
+                print(str(count) + '/' + str(len(name_list)))
                 
-                # enters hospital name into search bar
-                self.browser.find_element(By.ID, "front_page-quicksearch").send_keys(hospital)
-                
-                # deals with pop up screen by clicking the x on it
-                time.sleep(1)
-                try:
-                    self.browser.find_element(By.CLASS_NAME, 'fancybox-item.fancybox-close').click()
-                except:
-                    pass
-                
-                # clicks the search button 
-                self.browser.find_element(By.ID, "quicksearch_help_link").click()
-                
+                # tries to enters hospital name into search bar multiple times to ensure it finds a hospital if capable
+                for _ in range(4):
+                    try:
+                        self.browser.find_element(By.ID, "front_page-quicksearch").clear()
+                        self.browser.find_element(By.ID, "front_page-quicksearch").send_keys(hospital)
+                    except:
+                        break
+                    time.sleep(1)
+
                 # in case captcha needs to be solved
                 try:
                     time.sleep(1)
@@ -85,7 +91,7 @@ class Scraper():
                     pass
                 
                 # scrapes last date hospital information was updated
-                # the try and except is there in case a hospital entered couldn't be found then a proccess is begun to either skip it or manually find it
+                # the try and except is there in case a hospital entered couldn't be found cause then a proccess begins to either skip it or manually find it
                 try:
                     date_updated = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="main"]/div[2]/ul[1]/li')))
                     self.turn_list_to_text(date_updated)
@@ -93,36 +99,27 @@ class Scraper():
                     has_ahd_profile = 'YES'
                 except:
                     
-                    # tries to see if there is a was no results for the search
-                    # if no results then skip
-                    try:
-                        results_num = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="as_ul_front_page-quicksearch"]/li/span')))
-                        self.turn_list_to_text(results_num)
-                        if(results_num[0]=='No results'):
-                            self.hospital_list.append(Hospital())
-                            self.browser.get('https://www.ahd.com/')
-                            continue
+                    # prints hospital and input to guide user through proccess of manually finding a hospital and moving on or just skipping it
+                    print(hospital)
+                    input_string = input('Were you able to find hospital printed above? Enter Y or N and if choosing Y only enter answer when actually on the hospital page. Also if a captcha is presented deal with that before entering your answer: ')
+                    if(input_string.lower()=='y'):
                         
-                        # raises error to hit the except in case it wasn't already 
-                        raise ValueError('Error')
-                    except:
-                        
-                        # prints hospital and and input to guide user through proccess of manually finding a hospital and moving on or just skipping
-                        print(hospital)
-                        input_string = input('Were you able to find hospital printed above? Enter Y or N and if choosing Y only enter answer when actually on the hospital page. Also if a captcha is presented deal with that before entering your answer: ')
-                        if(input_string.lower()=='y'):
-                            
-                            # if hospital found get date again
-                            date_updated = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="main"]/div[2]/ul[1]/li')))
-                            self.turn_list_to_text(date_updated)
-                            date_updated = date_updated[0].split()[2]
-                            has_ahd_profile = 'YES'
-                        
-                        # if not found code to skip
-                        else:
-                            self.hospital_list.append(Hospital())
-                            self.browser.get('https://www.ahd.com/')
-                            continue
+                        # if hospital found get date again
+                        date_updated = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="main"]/div[2]/ul[1]/li')))
+                        self.turn_list_to_text(date_updated)
+                        date_updated = date_updated[0].split()[2]
+                        has_ahd_profile = 'YES'
+                    
+                    # if not found code to skip
+                    else:
+                        self.hospital_list.append(Hospital())
+                        self.browser.get('https://www.ahd.com/')
+                        continue
+                
+                # gets ahd name in case of future use
+                ahd_name = self.wait.until(EC.presence_of_all_elements_located((By.XPATH, '//*[@id="report_wrapper"]/tbody/tr/td[2]/a/b')))
+                self.turn_list_to_text(ahd_name)
+                ahd_name = ahd_name[0]
                         
                 # find the number of the table that has the information that needs to be scraped 
                 # does this by looping through tables and looking for a specific string 
@@ -211,8 +208,8 @@ class Scraper():
                 lat_y = self.browser.find_element(By.ID, "latbox").get_attribute('value')
                 long_x = self.browser.find_element(By.ID, "lonbox").get_attribute('value')
                 
-                # appends all the information a list of hospital objects
-                self.hospital_list.append(Hospital(date_added, staffed_beds, non_icu_beds, icu_beds, has_ahd_profile, date_updated, full_address, address, city, zip_code, lat_y, long_x))
+                # appends all the information to a list of hospital objects
+                self.hospital_list.append(Hospital(ahd_name, date_added, staffed_beds, non_icu_beds, icu_beds, has_ahd_profile, date_updated, full_address, address, city, zip_code, lat_y, long_x))
                 
                 # resets the broswer for next hospital
                 self.browser.get('https://www.ahd.com/')
@@ -231,7 +228,7 @@ class Scraper():
 def add_info_to_dataframe(hospital_list = [], df = pd.DataFrame()):
     
     # list of columns from dataframe that information is going to be added to
-    column_list = ['DATE_ADDED', 'STAFFED_BEDS_AHD', 'NON_ICU_BEDS_AHD', 'ICU_BEDS_AHD', 'HAS_AHD_PROFILE', 'DATE_UPDATED_AHD', 'FULL_ADDRESS', 'ADDRESS', 'CITY', 'ZIP', 'LAT_Y', 'LONG_X']
+    column_list = ['AHD_NAME', 'DATE_ADDED', 'STAFFED_BEDS_AHD', 'NON_ICU_BEDS_AHD', 'ICU_BEDS_AHD', 'HAS_AHD_PROFILE', 'DATE_UPDATED_AHD', 'FULL_ADDRESS', 'ADDRESS', 'CITY', 'ZIP', 'LAT_Y', 'LONG_X']
     
     # loops through columns and hospitals adding information to the dataframe 
     for i in range(0, len(column_list)):
@@ -241,18 +238,30 @@ def add_info_to_dataframe(hospital_list = [], df = pd.DataFrame()):
         df[column_list[i]] = df_list
 
     # drops columns that were in the inital dataframe that were unnecessary 
-    df.drop(df.iloc[:, 25:], inplace = True, axis = 1)
+    df.drop(df.iloc[:, 26:], inplace = True, axis = 1)
     
     # returns dataframe
     return df
-            
+
+# splits a scraped dataframe into completed and incompleted hospitals CSVs
+def split_dataframe(df = pd.DataFrame()):
+
+    # drops the rows for each respective dataframe
+    completed_df = df.drop(df.loc[df['STAFFED_BEDS_AHD']==0].index)
+    incompleted_df = df.drop(df.loc[df['STAFFED_BEDS_AHD']!=0].index)
+
+    # exports the dataframes
+    completed_df.to_csv('C:/Computer Science/COVID-19-Research-Data-Collection/Completed TX Hosp ZIP Metadata.csv', index = False)
+    incompleted_df.to_csv('C:/Computer Science/COVID-19-Research-Data-Collection/Incompleted TX Hosp ZIP Metadata.csv', index = False)
+    
 def main():
     
     # reads in TX Hospital csv file as dataframe
     df = pd.read_csv('C:/Computer Science/COVID-19-Research-Data-Collection/Copy of TX Hosp ZIP Metadata.csv')
-    
+
     # gets list of hospitals from it
-    hospital_name_list = list(df['PROVIDER_NAME'])
+    hospital_name_list, ahd_name_list = list(df['PROVIDER_NAME']), list(df['AHD_NAME'])
+    name_list = [[hospital_name_list[i], ahd_name_list[i]] for i in range(len(hospital_name_list))]
     
     # creates scraper object
     Scraper_obj = Scraper()
@@ -261,7 +270,7 @@ def main():
     date_added = input("Enter today's date in mm/dd/yy: ")
     
     # scrapes hospital information and takes two parameters which is list of hospital names and date added
-    hospital_list = Scraper_obj.scrape_hospital_info(hospital_name_list, date_added)
+    hospital_list = Scraper_obj.scrape_hospital_info(name_list, date_added)
     
     # quits browser when done
     Scraper_obj.browser.quit()
@@ -272,4 +281,8 @@ def main():
     # exports df to csv
     df.to_csv('C:/Computer Science/COVID-19-Research-Data-Collection/Temporary Scraped TX Hosp ZIP Metadata.csv', index = False) 
     
+    # reads in scraped data and splits it into complete and incomplete hospitals
+    #df = pd.read_csv("C:/Computer Science/COVID-19-Research-Data-Collection/Scraped TX Hosp ZIP Metadata.csv")
+    #split_dataframe(df)
+
 main()
